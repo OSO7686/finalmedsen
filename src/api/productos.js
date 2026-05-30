@@ -76,16 +76,27 @@ export const buscarPorCompatibilidad = async (marca, modelo, pagina = 1, limite 
   };
 };
 
-export const buscarProductos = async (terminoBusqueda = '', pagina = 1, limite = 30) => {
+// --- AQUÍ ESTÁ EL CAMBIO PRINCIPAL ---
+// Agregamos el parámetro "vista" y el filtro "es_nuevo"
+export const buscarProductos = async (terminoBusqueda = '', pagina = 1, limite = 30, vista = 'catalogo') => {
   const from = (pagina - 1) * limite;
   const to = from + limite - 1;
   const busquedaLimpia = String(terminoBusqueda || '').trim();
 
-  const { data, error, count } = await supabase
+  let query = supabase
     .from('productos_medicos_v2')
-    .select('*', { count: 'exact' })
-    .or(`nombre.ilike.%${busquedaLimpia}%,mi_sku.ilike.%${busquedaLimpia}%,sku_competencia.ilike.%${busquedaLimpia}%`)
-    .range(from, to);
+    .select('*', { count: 'exact' });
+
+  if (busquedaLimpia) {
+    query = query.or(`nombre.ilike.%${busquedaLimpia}%,mi_sku.ilike.%${busquedaLimpia}%,sku_competencia.ilike.%${busquedaLimpia}%`);
+  }
+
+  // MAGIA AQUÍ: Filtramos para que la pestaña de Nuevos SOLO muestre los nuevos
+  if (vista === 'nuevos') {
+    query = query.eq('es_nuevo', true);
+  }
+
+  const { data, error, count } = await query.range(from, to);
 
   if (error) {
     console.error("Error en Supabase al buscar:", error);
@@ -97,6 +108,17 @@ export const buscarProductos = async (terminoBusqueda = '', pagina = 1, limite =
     total: count || 0 
   };
 }; 
+
+// NUEVA FUNCIÓN: Para el checkbox de productos nuevos
+export const toggleProductoNuevo = async (sku, estadoActual) => {
+  const { data, error } = await supabase
+    .from('productos_medicos_v2')
+    .update({ es_nuevo: !estadoActual })
+    .eq('mi_sku', sku);
+
+  if (error) throw error;
+  return data;
+};
 
 // NUEVA FUNCIÓN: Para insertar productos con TODOS los campos
 export const crearProducto = async (nuevo) => {
@@ -124,7 +146,8 @@ export const crearProducto = async (nuevo) => {
         imagen_url_6: nuevo.imagen_url_6,
         compatibility: nuevo.compatibility,
         especificaciones: nuevo.especificaciones,
-        oemcross: nuevo.oemcross
+        oemcross: nuevo.oemcross,
+        es_nuevo: true // Todo producto que crees desde el panel, nacerá como "nuevo"
       }
     ]);
 
